@@ -90,8 +90,8 @@ def main():
     dset = data.XianDataset(args.data_dir, args.mode, feature_norm=args.feature_norm)
     _X_s_tr = FN(dset.X_s_tr).to(args.device)
     _Y_s_tr_ix = FN(dil(dset.Y_s_tr, dset.Cs)).to(args.device) # indexed labels
-    _Ss = FN(dset.Sall[dset.Cs]).to(args.device)
-    _Su = FN(dset.Sall[dset.Cu]).to(args.device)
+    _Ss = FN(dset.Sall[dset.Cs]).to(args.device) # seen data
+    _Su = FN(dset.Sall[dset.Cu]).to(args.device) # unseen data
     if args.d_noise == 0: args.d_noise = dset.d_attr
 
     # **************************************** create data loaders ****************************************
@@ -235,11 +235,11 @@ def main():
             d_real = d_net(x_real, s).mean()
             d_fake = d_net(x_fake, s).mean()
             d_penalty = modules.gradient_penalty(d_net, x_real, x_fake, s)
-            d_loss = d_fake - d_real + args.L * d_penalty
+            d_loss = d_fake - d_real + args.L * d_penalty #WGAN-GP Loss
 
             d_optim.zero_grad()
             d_loss.backward()
-            d_optim.step()
+            d_optim.step() #update conditional discriminator
 
             training_logger.update_meters(
                 ['d/real', 'd/fake', 'd/loss', 'd/penalty'],
@@ -277,9 +277,9 @@ def main():
                 [cycle_loss.item()],
                 x_fake.size(0))
 
-        g_loss = args.C * fcls_loss + args.R * cycle_loss + g_wganloss
+        g_loss = args.C * fcls_loss + args.R * cycle_loss + g_wganloss #actually only wgan loss
         g_loss.backward()
-
+        
         # gmn iterations
         for _ in range(args.n_gm_iter):
             c = next(class_iter)[0].item()
@@ -326,9 +326,9 @@ def main():
                     [_cossim.item(), _mse.item()],
                     x_real.size(0))
 
-            grad_cossim = torch.stack(grad_cossim)
+            grad_cossim = torch.stack(grad_cossim) 
             grad_mse = torch.stack(grad_mse)
-            gm_loss = (1.0 - grad_cossim).sum() * args.Q + grad_mse.sum() * args.Z
+            gm_loss = (1.0 - grad_cossim).sum() * args.Q + grad_mse.sum() * args.Z #gradient matching loss
             gm_loss.backward()
 
             training_logger.update_meters(
@@ -336,7 +336,7 @@ def main():
                 [real_loss.item(), fake_loss.item()],
                 x_real.size(0))
 
-        g_optim.step()
+        g_optim.step() #update generator
 
         # **************************************** Classifier update ****************************************
         if args.n_gm_iter > 0:
@@ -351,7 +351,7 @@ def main():
                 if args.clf_type == 'bilinear-comp':
                     clf_acc, clf_loss = clf.train_step(x, _Ss, y_ix)
                 else:
-                    clf_acc, clf_loss = clf.train_step(x, y_ix)
+                    clf_acc, clf_loss = clf.train_step(x, y_ix) # update
                 training_logger.update_meters(
                     ['clf/train_loss', 'clf/train_acc'],
                     [clf_loss, clf_acc],
